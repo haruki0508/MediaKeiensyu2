@@ -51,8 +51,8 @@ def create_scene_factory(app):
                         "pose_examples/pose_example2.jpg"
                     ]
 
-            if game_state.last_shutter_path: # 最新の撮影画像を追加
-                image_list.append(game_state.last_shutter_path)
+            if game_state.shutter_paths: # 最新の撮影画像を追加
+                image_list.extend(game_state.shutter_paths)
 
             return PoseEstimationScene(app, image_paths=image_list, on_black=True, save_dir="game_test/outputs_estimated")
         

@@ -3,7 +3,7 @@ import os
 import random
 import re
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 import pygame
@@ -16,7 +16,7 @@ import pygame
 class GameState:
     theme: str = ""
     player_turn: int = 1
-    last_shutter_path: str = ""
+    shutter_paths: list[str] = field(default_factory=list)
 
 
 game_state = GameState()
