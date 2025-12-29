@@ -3,6 +3,45 @@ import math
 import time
 import os
 from core.scene import Scene
+from pathlib import Path
+
+def get_result_image_path(first_player_win: bool):
+    """
+    first_player_win:
+        True  -> 先攻勝利（2番目に新しい画像）
+        False -> 後攻勝利（最も新しい画像）
+    """
+
+    # ★ このファイル（final_result_scene_class.py）の場所
+    base_dir = os.path.dirname(__file__)
+
+    # ★ scenes/ の1つ上 = game_test/
+    game_root = os.path.abspath(os.path.join(base_dir, ".."))
+
+    # ★ outputs_estimated フォルダ
+    image_dir = os.path.join(game_root, "outputs_estimated")
+
+    if not os.path.exists(image_dir):
+        print("[WARN] outputs_estimated not found:", image_dir)
+        return None
+
+    image_files = [
+        f for f in os.listdir(image_dir)
+        if f.startswith("shutter_") and f.endswith(".jpg")
+    ]
+
+    if not image_files:
+        return None
+
+    # ファイル名順 = 時刻順
+    image_files.sort()
+
+    if first_player_win:
+        selected = image_files[-2] if len(image_files) >= 2 else image_files[-1]
+    else:
+        selected = image_files[-1]
+
+    return os.path.join(image_dir, selected)
 
 
 class FinalResultScene(Scene):
@@ -51,12 +90,12 @@ class FinalResultScene(Scene):
             self.TEXT_STR = "DRAW"
         elif self.FIRST_PLAYER_WIN:
             self.BACKGROUND_COLOR = (255, 80, 80)
-            self.IMAGE_FILENAME = "img1.png"
-            self.TEXT_STR = "WINER 1P!"
+            self.IMAGE_FILENAME = get_result_image_path(first_player_win=True)
+            self.TEXT_STR = "WINNER 1P!"
         else:
             self.BACKGROUND_COLOR = (80, 80, 255)
-            self.IMAGE_FILENAME = "img2.png"
-            self.TEXT_STR = "WINER 2P!"
+            self.IMAGE_FILENAME = get_result_image_path(first_player_win=False)
+            self.TEXT_STR = "WINNER 2P!"
 
         # ==============================
         # パラメータ（元完全一致）
