@@ -9,7 +9,7 @@ from common import Config, Utils, game_state
 
 
 class CameraScene(Scene):
-    """Phase4: カメラ・骨格推定・撮影"""
+    """Phase4: カメラ・撮影"""
 
     def __init__(self, app):
         super().__init__(app)
@@ -72,9 +72,9 @@ class CameraScene(Scene):
             self.after_shutter_timer += dt
             if self.after_shutter_timer >= self.after_shutter_delay:
                 if hasattr(self, "request_next"):
-                    self.request_next("score")
+                    self.request_next("pose_estimate_multi")
                 else:
-                    self.next_scene = "score"
+                    self.next_scene = "pose_estimate_multi"
             return
 
         if self.anim_timer < (self.wait_duration + self.anim_duration):
@@ -102,7 +102,6 @@ class CameraScene(Scene):
             ret, frame = False, None
 
         if ret and frame is not None:
-            frame = self.app.hardware.process_pose(frame)
             cv2 = self.app.hardware.cv2
             flipped = cv2.flip(frame, 1) if cv2 else frame
             self.latest_frame = flipped.copy()
@@ -202,6 +201,7 @@ class CameraScene(Scene):
 
         if ok:
             print(f"Saved shutter frame: {save_path}")
+            game_state.last_shutter_path = save_path
         else:
             print(f"Failed to save shutter frame: {save_path}")
 
