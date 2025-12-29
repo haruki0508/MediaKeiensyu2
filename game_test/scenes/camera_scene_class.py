@@ -15,6 +15,7 @@ class CameraScene(Scene):
         super().__init__(app)
         self.theme = game_state.theme or "（おだい未設定）"
         self.player_turn = game_state.player_turn
+        self.allow_second_shot = self.player_turn == 1
 
         self.latest_frame = None
         self.camera_ready = False
@@ -24,15 +25,28 @@ class CameraScene(Scene):
         self.anim_duration = 2.0
 
         self.is_counting = False
-        self.countdown_timer = Config.COUNTDOWN_SECONDS
+        self.first_countdown_seconds = 5.0
+        self.second_countdown_seconds = 5.0
+        self.interval_seconds = 4.0
+        self.second_start_pause = 0.5
+        self.second_pause_timer = 0.0
+        self.countdown_timer = self.first_countdown_seconds
+        self.interval_timer = 0.0
+        self.phase = "first_countdown"
 
-        self.time_speed = 0.7
+        self.time_speed = 1.0
         self.after_shutter = False
         self.after_shutter_timer = 0.0
         self.after_shutter_delay = 0.5
+        self.shutter_anim_duration = 0.6
+        self.shutter_anim_timer = 0.0
+        self.shutter_anim_active = False
 
         self.dummy_surf = pygame.Surface((Config.SCREEN_WIDTH, Config.SCREEN_HEIGHT))
         self.dummy_surf.fill(Config.DUMMY_BG)
+
+        self.interval_surf = pygame.Surface((Config.SCREEN_WIDTH, Config.SCREEN_HEIGHT))
+        self.interval_surf.fill(Config.DARK_BLUE)
 
         t_theme = self.renderer.render(f"おだい: {self.theme}", 40, Config.WHITE)
         self.dummy_surf.blit(
@@ -50,11 +64,19 @@ class CameraScene(Scene):
         # 再入場用リセット
         self.anim_timer = 0.0
         self.is_counting = False
-        self.countdown_timer = Config.COUNTDOWN_SECONDS
+        self.player_turn = game_state.player_turn
+        self.allow_second_shot = self.player_turn == 1
+        self.countdown_timer = self.first_countdown_seconds
+        self.interval_timer = 0.0
+        self.second_pause_timer = 0.0
+        self.phase = "first_countdown"
         self.latest_frame = None
         self.after_shutter = False
         self.after_shutter_timer = 0.0
         self.dummy_surf.set_alpha(255)
+        game_state.shutter_paths = []
+        self.shutter_anim_timer = 0.0
+        self.shutter_anim_active = False
 
         self.camera_ready = self.app.hardware.start_camera()
         if not self.camera_ready:
@@ -68,6 +90,11 @@ class CameraScene(Scene):
         if not self.camera_ready:
             return
 
+        if self.shutter_anim_active:
+            self.shutter_anim_timer += dt
+            if self.shutter_anim_timer >= self.shutter_anim_duration:
+                self.shutter_anim_active = False
+
         if self.after_shutter:
             self.after_shutter_timer += dt
             if self.after_shutter_timer >= self.after_shutter_delay:
@@ -79,21 +106,52 @@ class CameraScene(Scene):
 
         if self.anim_timer < (self.wait_duration + self.anim_duration):
             self.anim_timer += dt
-        else:
-            if not self.is_counting:
-                self.is_counting = True
+            return
 
-            if self.countdown_timer > 0:
-                self.countdown_timer -= dt * self.time_speed
+        if self.phase == "after_first_shutter":
+            if not self.shutter_anim_active:
+                self._start_interval()
+            return
 
-                if self.countdown_timer <= 0:
-                    self.countdown_timer = 0
-                    print("SHUTTER!")
-                    self._capture_shutter()
+        if self.phase == "interval":
+            self.interval_timer -= dt
+            if self.interval_timer <= 0:
+                self._start_second_pause()
+            return
+
+        if self.phase == "second_pause":
+            self.second_pause_timer -= dt
+            if self.second_pause_timer <= 0:
+                self._start_second_shot()
+            return
+
+        if not self.is_counting:
+            self.is_counting = True
+
+        if self.countdown_timer > 0:
+            self.countdown_timer -= dt * self.time_speed
+
+            if self.countdown_timer <= 0:
+                self.countdown_timer = 0
+                print("SHUTTER!")
+                if self.phase == "first_countdown":
+                    if self.allow_second_shot:
+                        self._capture_shutter(final_shot=False)
+                        self.phase = "after_first_shutter"
+                    else:
+                        self._capture_shutter(final_shot=True)
+                elif self.phase == "second_countdown":
+                    self._capture_shutter(final_shot=True)
 
     def draw(self, surface):
         self.screen = surface
         self.dummy_surf.set_alpha(255)
+
+        if self.phase == "interval":
+            self.screen.blit(self.interval_surf, (0, 0))
+            self._draw_ui()
+            self._draw_shutter_effect()
+            return
 
         # 1) カメラ映像
         if self.camera_ready:
@@ -130,6 +188,7 @@ class CameraScene(Scene):
 
         # 3) UI
         self._draw_ui()
+        self._draw_shutter_effect()
 
     def _draw_ui(self):
         t_theme = self.renderer.render(f"おだい: {self.theme}", 24, Config.WHITE)
@@ -145,7 +204,27 @@ class CameraScene(Scene):
             self.screen.blit(shadow, (22, Config.SCREEN_HEIGHT - 62))
             self.screen.blit(msg, (20, Config.SCREEN_HEIGHT - 64))
 
-        if self.is_counting and self.countdown_timer > 0:
+        if self.phase == "interval":
+            msg = self.renderer.render("つぎは こうこう の さつえい", 32, Config.WHITE)
+            shadow = self.renderer.render("つぎは こうこう の さつえい", 32, Config.BLACK)
+            rect = msg.get_rect(center=(Config.SCREEN_WIDTH // 2, Config.SCREEN_HEIGHT - 80))
+            self.screen.blit(shadow, rect.move(2, 2))
+            self.screen.blit(msg, rect)
+            if self.interval_timer > 0:
+                ratio = max(0.0, min(1.0, 1.0 - (self.interval_timer / self.interval_seconds)))
+                bar_w = int(Config.SCREEN_WIDTH * 0.7)
+                bar_h = 22
+                bar_x = (Config.SCREEN_WIDTH - bar_w) // 2
+                bar_y = (Config.SCREEN_HEIGHT // 2) + 80
+                pygame.draw.rect(self.screen, Config.BLACK, (bar_x - 3, bar_y - 3, bar_w + 6, bar_h + 6))
+                pygame.draw.rect(self.screen, Config.GRAY, (bar_x, bar_y, bar_w, bar_h))
+                pygame.draw.rect(
+                    self.screen,
+                    Config.YELLOW,
+                    (bar_x, bar_y, int(bar_w * ratio), bar_h),
+                )
+
+        if self.phase in ("first_countdown", "second_countdown") and self.is_counting and self.countdown_timer > 0:
             display_num = int(self.countdown_timer) + 1
             progress = self.countdown_timer - int(self.countdown_timer)
 
@@ -153,7 +232,8 @@ class CameraScene(Scene):
             scale = 1.0 + (1.0 - progress) * 0.8
             base_size = 500
 
-            t_timer = self.renderer.render(str(display_num), base_size, Config.RED)
+            timer_color = Config.BLUE if self.phase == "second_countdown" else Config.RED
+            t_timer = self.renderer.render(str(display_num), base_size, timer_color)
             new_w = int(t_timer.get_width() * scale)
             new_h = int(t_timer.get_height() * scale)
 
@@ -164,7 +244,7 @@ class CameraScene(Scene):
                 cy = (Config.SCREEN_HEIGHT - new_h) // 2
                 self.screen.blit(t_timer_scaled, (cx, cy))
 
-    def _capture_shutter(self):
+    def _capture_shutter(self, final_shot=True):
         if not self.camera_ready:
             print("Camera not ready, skip shutter.")
             return
@@ -186,6 +266,8 @@ class CameraScene(Scene):
         save_path = os.path.join(Config.PATH_SHUTTER_DIR, filename)
 
         ok = False
+        self.shutter_anim_active = True
+        self.shutter_anim_timer = 0.0
         try:
             # Use imencode to support non-ASCII paths on Windows
             ext = os.path.splitext(save_path)[1] or ".jpg"
@@ -201,11 +283,32 @@ class CameraScene(Scene):
 
         if ok:
             print(f"Saved shutter frame: {save_path}")
-            game_state.last_shutter_path = save_path
+            game_state.shutter_paths.append(save_path)
         else:
             print(f"Failed to save shutter frame: {save_path}")
 
-        self.after_shutter = True
+        if final_shot:
+            self.after_shutter = True
+
+    def _start_interval(self):
+        self.phase = "interval"
+        self.interval_timer = self.interval_seconds
+        self.is_counting = False
+        self.player_turn = 2
+        game_state.player_turn = 2
+
+    def _start_second_shot(self):
+        self.phase = "second_countdown"
+        self.player_turn = 2
+        game_state.player_turn = 2
+        self.is_counting = True
+        self.countdown_timer = self.second_countdown_seconds
+        self.anim_timer = self.wait_duration + self.anim_duration
+
+    def _start_second_pause(self):
+        self.phase = "second_pause"
+        self.second_pause_timer = self.second_start_pause
+        self.is_counting = False
 
     def _draw_turn(self):
         bx, by = 20, 65
@@ -232,3 +335,28 @@ class CameraScene(Scene):
 
         self.screen.blit(p1, (bx, by))
         self.screen.blit(p2, (bx + bw + 10, by))
+
+    def _draw_shutter_effect(self):
+        if not self.shutter_anim_active:
+            return
+
+        progress = min(1.0, self.shutter_anim_timer / self.shutter_anim_duration)
+        radius_scale = abs((progress * 2.0) - 1.0)
+        radius = int(max(Config.SCREEN_WIDTH, Config.SCREEN_HEIGHT) * (0.2 + 0.8 * radius_scale))
+        center_x = Config.SCREEN_WIDTH // 2
+        center_y = Config.SCREEN_HEIGHT // 2
+        blade_width = 0.6
+        rotation = progress * 3.14
+
+        overlay = pygame.Surface((Config.SCREEN_WIDTH, Config.SCREEN_HEIGHT), pygame.SRCALPHA)
+        blade_color = (0, 0, 0, 240)
+        for i in range(6):
+            angle = rotation + (i * 1.047)
+            ax = center_x + int(radius * pygame.math.Vector2(1, 0).rotate_rad(angle - blade_width).x)
+            ay = center_y + int(radius * pygame.math.Vector2(1, 0).rotate_rad(angle - blade_width).y)
+            bx = center_x + int(radius * pygame.math.Vector2(1, 0).rotate_rad(angle + blade_width).x)
+            by = center_y + int(radius * pygame.math.Vector2(1, 0).rotate_rad(angle + blade_width).y)
+            pygame.draw.polygon(overlay, blade_color, [(center_x, center_y), (ax, ay), (bx, by)])
+        pygame.draw.circle(overlay, blade_color, (center_x, center_y), int(radius * 0.1))
+
+        self.screen.blit(overlay, (0, 0))
