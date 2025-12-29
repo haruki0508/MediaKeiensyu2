@@ -6,7 +6,7 @@ from scenes.ex_game_scene_class import ExGameScene      ##例（本番は使わ�
 from scenes.ex_result_scene_class import ExResultScene  ##例（本番は使わない）
 ##ここに自分のクラス名とファイル名を追加してください！
 from scenes.score_screen import ScoreScene
-from common import AppContext
+from common import AppContext, game_state
 
 from scenes.howto_scene_class import HowToScene
 from scenes.roulette_scene_class import RouletteScene
@@ -46,10 +46,13 @@ def create_scene_factory(app):
             #next_scene_name = "title"
             
             image_list = [
-                        ##ここに画像ファイルを追加してください！
+                        ##ここに画像ファイルを追加してください！->下のif文で最新の撮影画像も追加されます
                         "pose_examples/pose_example.jpg",
                         "pose_examples/pose_example2.jpg"
                     ]
+
+            if game_state.last_shutter_path: # 最新の撮影画像を追加
+                image_list.append(game_state.last_shutter_path)
 
             return PoseEstimationScene(app, image_paths=image_list, on_black=True, save_dir="game_test/outputs_estimated")
         

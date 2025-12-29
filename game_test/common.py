@@ -16,6 +16,7 @@ import pygame
 class GameState:
     theme: str = ""
     player_turn: int = 1
+    last_shutter_path: str = ""
 
 
 game_state = GameState()
